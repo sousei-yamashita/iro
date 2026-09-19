@@ -218,3 +218,40 @@ jobs:
             .pi
           sparse-checkout-cone-mode: true
           fetch-depth: 1
+      - name: Save agent config folders for base branch restoration
+        env:
+          GH_AW_AGENT_FOLDERS: ".agents .github"
+          GH_AW_AGENT_FILES: "AGENTS.md"
+        run: |
+          bash "${RUNNER_TEMP}/gh-aw/actions/save_base_github_folders.sh"
+      - name: Check workflow lock file
+        id: check-lock-file
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          GH_AW_WORKFLOW_FILE: "requirements-review-cost-test.lock.yml"
+          GH_AW_CONTEXT_WORKFLOW_REF: "${{ github.workflow_ref }}"
+        with:
+          script: |
+            const path = require('path');
+            const actionsDir = path.join(process.env.RUNNER_TEMP, 'gh-aw', 'actions');
+            const { setupGlobals } = require(path.join(actionsDir, 'setup_globals.cjs'));
+            setupGlobals(core, github, context, exec, io, getOctokit);
+            const { main } = require(path.join(actionsDir, 'check_workflow_timestamp_api.cjs'));
+            await main();
+      - name: Check compile-agentic version
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          GH_AW_COMPILED_VERSION: "v0.89.15"
+          GH_AW_BLOCKED_VERSION_REPORT_AS_ISSUE: "false"
+          GH_AW_WORKFLOW_NAME: "Requirements Review"
+        with:
+          script: |
+            const path = require('path');
+            const actionsDir = path.join(process.env.RUNNER_TEMP, 'gh-aw', 'actions');
+            const { setupGlobals } = require(path.join(actionsDir, 'setup_globals.cjs'));
+            setupGlobals(core, github, context, exec, io, getOctokit);
+            const { main } = require(path.join(actionsDir, 'check_version_updates.cjs'));
+            await main();
+      - name: Log runtime features
+        if: ${{ contains(toJSON(vars), '"GH_AW_RUNTIME_FEATURES":') }}
+        run: bash "${RUNNER_TEMP}/gh-aw/actions/log_runtime_features_summary.sh"
