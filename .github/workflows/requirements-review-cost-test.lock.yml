@@ -312,4 +312,14 @@ jobs:
             const { setupGlobals } = require(path.join(actionsDir, 'setup_globals.cjs'));
             setupGlobals(core, github, context, exec, io, getOctokit);
             const substitutePlaceholders = require(path.join(actionsDir, 'substitute_placeholders.cjs'));
-            return await substitutePlaceholders({ file: process.env.GH_AW_PROMPT, substitutions: {} });
+            return await substitutePlaceholders({
+              file: process.env.GH_AW_PROMPT,
+              substitutions: {
+                GH_AW_EXPR_TEST: process.env.GH_AW_EXPR_TEST,
+                GH_AW_GITHUB_ACTOR: process.env.GH_AW_GITHUB_ACTOR,
+                GH_AW_GITHUB_REPOSITORY: process.env.GH_AW_GITHUB_REPOSITORY,
+                GH_AW_GITHUB_RUN_ID: process.env.GH_AW_GITHUB_RUN_ID,
+                GH_AW_GITHUB_WORKSPACE: process.env.GH_AW_GITHUB_WORKSPACE,
+                GH_AW_MCP_CLI_SERVERS_LIST: process.env.GH_AW_MCP_CLI_SERVERS_LIST
+              }
+            });
