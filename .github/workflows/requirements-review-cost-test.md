@@ -4,10 +4,6 @@ on:
 permissions: read-all
 engine: copilot
 max-ai-credits: 10
-safe-outputs:
-  report-failure-as-issue: false
-  report-failed-jobs: false
-  threat-detection: false
 ---
 
 # Requirements Review
