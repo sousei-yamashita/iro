@@ -1,0 +1,102 @@
+name: Jules Independent Verification Experiment
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/jules-api-conduction.yml"
+      - ".github/jules-independent-trigger"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  independent-verification:
+    name: Jules Independent Verification
+    runs-on: ubuntu-latest
+    env:
+      JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      SUBJECT_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Verify fixed subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$JULES_API_KEY"
+          test -n "$PR_NUMBER"
+          test -n "$SUBJECT_SHA"
+          test "${#SUBJECT_SHA}" -eq 40
+
+      - name: Locate iro Jules source
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > all-sources.jsonl
+          TOKEN=""
+          for _ in {1..20}; do
+            URL="https://jules.googleapis.com/v1alpha/sources?pageSize=100"
+            if [ -n "$TOKEN" ]; then
+              URL="$URL&pageToken=$(printf '%s' "$TOKEN" | jq -sRr @uri)"
+            fi
+            curl --fail-with-body --silent --show-error \
+              -H "x-goog-api-key: $JULES_API_KEY" "$URL" > page.json
+            jq -c '.sources[]?' page.json >> all-sources.jsonl
+            TOKEN="$(jq -r '.nextPageToken // empty' page.json)"
+            [ -z "$TOKEN" ] && break
+          done
+          SOURCE="$(jq -sr '[.[] | select(.githubRepo.owner == "sousei-yamashita" and .githubRepo.repo == "iro")][0].name // empty' all-sources.jsonl)"
+          test -n "$SOURCE"
+          echo "source=$SOURCE" >> "$GITHUB_OUTPUT"
+
+      - name: Create blind independent-verification session
+        id: session
+        shell: bash
+        env:
+          JULES_SOURCE: ${{ steps.source.outputs.source }}
+        run: |
+          set -euo pipefail
+          PROMPT="$(cat <<EOF
+You are the independent verification executor for Sousei-line.
+
+Inspection subject:
+repository: $GITHUB_REPOSITORY
+pull_request: #$PR_NUMBER
+exact full head SHA: $SUBJECT_SHA
+
+Independence requirement:
+- Independently inspect the repository and this exact PR/head.
+- Do NOT use, request, quote, or rely on any prior Requirements Review verdict, semantic-review evidence, human adoption decision, or prior independent verdict.
+- Gather the applicable requirements and evidence yourself from the repository and GitHub PR state available to you.
+- Verify the current PR head is exactly the SHA above. If it is not, return STALE.
+- Inspect the complete change and applicable repository requirements, including README.md, AGENTS.md, PRODUCT.md, DESIGN.md, QA.md, docs/REVIEW_HANDOFF.md, docs/REVIEW_EVIDENCE.md, and docs/SOUSEI_LINE_IDENTITY.md when present.
+- Check identity mismatch, stale evidence assumptions, scope drift, merge-boundary confusion, unsafe permissions, and concrete requirement mismatches.
+- Inspection only. Do not modify files, commit, create a PR, merge, deploy, approve, request changes, or make the human ADOPT/REJECT decision.
+
+Your final response MUST be exactly one JSON object and no Markdown:
+{"schema":"sousei.line-evidence/v1","repository":"$GITHUB_REPOSITORY","pr_number":$PR_NUMBER,"subject_head_sha":"$SUBJECT_SHA","stage":"independent","verdict":"PASS or NG or STALE","evidence":{"findings":[]},"inspector":{"process":"independent-requirements-verification","process_version":"1","executor":"google-jules"},"issued_at":"<RFC3339 UTC>"}
+For NG, findings must identify concrete mismatches and their source requirement.
+EOF
+)"
+          jq -n \
+            --arg prompt "$PROMPT" \
+            --arg source "$JULES_SOURCE" \
+            --arg title "Sousei-line independent verification PR #$PR_NUMBER $SUBJECT_SHA" \
+            '{prompt:$prompt,title:$title,sourceContext:{source:$source,githubRepoContext:{startingBranch:"line/jules-api-conduction"}},requirePlanApproval:true}' > request.json
+          curl --fail-with-body --silent --show-error \
+            -X POST -H "Content-Type: application/json" \
+            -H "x-goog-api-key: $JULES_API_KEY" \
+            --data @request.json \
+            "https://jules.googleapis.com/v1alpha/sessions" > session.json
+          SESSION_NAME="$(jq -r '.name // empty' session.json)"
+          SESSION_ID="$(jq -r '.id // empty' session.json)"
+          test -n "$SESSION_NAME"
+          test -n "$SESSION_ID"
+          echo "session_name=$SESSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "session_id=$SESSION_ID" >> "$GITHUB_OUTPUT"
+          echo "Independent verification session created: $SESSION_NAME"
+          echo "Subject: $GITHUB_REPOSITORY PR #$PR_NUMBER $SUBJECT_SHA"
+          echo "Plan approval required; no mutation automation requested."
