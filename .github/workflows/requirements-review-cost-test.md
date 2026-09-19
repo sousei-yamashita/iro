@@ -1,6 +1,7 @@
 ---
 on:
   workflow_dispatch:
+  roles: [admin, maintainer, write]
 permissions: read-all
 engine: copilot
 max-ai-credits: 10
