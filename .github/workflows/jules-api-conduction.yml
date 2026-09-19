@@ -10,7 +10,7 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
+  pull-requests: write
 
 jobs:
   independent-verification:
@@ -105,3 +105,67 @@ jobs:
           echo "Independent verification session created: $SESSION_NAME"
           echo "Subject: $GITHUB_REPOSITORY PR #$PR_NUMBER $SUBJECT_SHA"
           echo "Independent verification session started automatically; no mutation automation requested."
+
+
+      - name: Wait for Jules result and validate evidence
+        id: evidence
+        shell: bash
+        env:
+          SESSION_ID: ${{ steps.session.outputs.session_id }}
+        run: |
+          set -euo pipefail
+          for _ in {1..60}; do
+            curl --fail-with-body --silent --show-error               -H "x-goog-api-key: $JULES_API_KEY"               "https://jules.googleapis.com/v1alpha/sessions/$SESSION_ID" > session-status.json
+            STATE="$(jq -r '.state // empty' session-status.json)"
+            echo "Jules state: $STATE"
+            case "$STATE" in
+              COMPLETED) break ;;
+              FAILED) echo "Jules session failed"; exit 1 ;;
+              AWAITING_PLAN_APPROVAL|AWAITING_USER_FEEDBACK|PAUSED)
+                echo "Jules requires human interaction: $STATE"; exit 1 ;;
+            esac
+            sleep 10
+          done
+          test "$(jq -r '.state' session-status.json)" = "COMPLETED"
+
+          curl --fail-with-body --silent --show-error             -H "x-goog-api-key: $JULES_API_KEY"             "https://jules.googleapis.com/v1alpha/sessions/$SESSION_ID/activities?pageSize=100" > activities.json
+
+          jq -r '[.activities[]? | select(.agentMessaged.agentMessage? != null) | .agentMessaged.agentMessage] | last // empty' activities.json > evidence.json
+          jq -e . evidence.json >/dev/null
+          test "$(jq -r '.schema' evidence.json)" = "sousei.line-evidence/v1"
+          test "$(jq -r '.repository' evidence.json)" = "$GITHUB_REPOSITORY"
+          test "$(jq -r '.pr_number|tostring' evidence.json)" = "$PR_NUMBER"
+          test "$(jq -r '.subject_head_sha' evidence.json)" = "$SUBJECT_SHA"
+          test "$(jq -r '.stage' evidence.json)" = "independent"
+          jq -e '.verdict == "PASS" or .verdict == "NG" or .verdict == "STALE"' evidence.json >/dev/null
+          {
+            echo 'json<<EOF'
+            cat evidence.json
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Recheck PR head before evidence return
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          CURRENT_SHA="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq .head.sha)"
+          test "$CURRENT_SHA" = "$SUBJECT_SHA"
+
+      - name: Return independent evidence to PR
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVIDENCE_JSON: ${{ steps.evidence.outputs.json }}
+        run: |
+          set -euo pipefail
+          MARKER="SOUSEI_INDEPENDENT_EVIDENCE"
+          EXISTING="$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments?per_page=100" --paginate             --jq '.[] | select(.body | contains("'"$MARKER"'")) | select(.body | contains("'"$SUBJECT_SHA"'")) | .id' | head -n1)"
+          if [ -n "$EXISTING" ]; then
+            echo "Evidence already returned for this exact SHA: comment $EXISTING"
+            exit 0
+          fi
+          BODY="$(printf '%s\n\n\`\`\`json\n%s\n\`\`\`' "$MARKER" "$EVIDENCE_JSON")"
+          gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" -f body="$BODY" >/dev/null
+          echo "Independent evidence returned to PR #$PR_NUMBER for $SUBJECT_SHA"
