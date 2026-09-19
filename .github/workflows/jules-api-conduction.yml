@@ -114,7 +114,7 @@ jobs:
           SESSION_ID: ${{ steps.session.outputs.session_id }}
         run: |
           set -euo pipefail
-          for _ in {1..60}; do
+          for _ in {1..180}; do
             curl --fail-with-body --silent --show-error               -H "x-goog-api-key: $JULES_API_KEY"               "https://jules.googleapis.com/v1alpha/sessions/$SESSION_ID" > session-status.json
             STATE="$(jq -r '.state // empty' session-status.json)"
             echo "Jules state: $STATE"
