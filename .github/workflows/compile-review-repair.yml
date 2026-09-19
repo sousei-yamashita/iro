@@ -1,0 +1,26 @@
+name: Compile Requirements Review repair
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Install gh-aw
+        run: |
+          curl -sSL https://raw.githubusercontent.com/github/gh-aw/main/install-gh-aw.sh -o /tmp/install-gh-aw.sh
+          bash /tmp/install-gh-aw.sh v0.89.15
+      - name: Compile and stage bytes
+        run: |
+          gh aw compile requirements-review-cost-test
+          base64 -w0 .github/workflows/requirements-review-cost-test.lock.yml > compiled-review-lock.txt
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add compiled-review-lock.txt
+          git commit -m "Stage compiled lock bytes"
+          git push origin HEAD:line/repair-requirements-review-lock
