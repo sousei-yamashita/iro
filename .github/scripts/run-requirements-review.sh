@@ -42,7 +42,16 @@ For NG, findings must identify concrete mismatches and their source requirement.
 EOF
 
 copilot -sp "$(cat .sousei-review/prompt.txt)" --no-ask-user > .sousei-review/evidence.raw.json
-jq -e . .sousei-review/evidence.raw.json > .sousei-review/evidence.json
+python3 - <<'PY'
+import json
+from pathlib import Path
+raw = Path(".sousei-review/evidence.raw.json").read_text()
+start, end = raw.find("{"), raw.rfind("}")
+if start < 0 or end < start:
+    raise SystemExit("Requirements Review returned no JSON object")
+obj = json.loads(raw[start:end + 1])
+Path(".sousei-review/evidence.json").write_text(json.dumps(obj, ensure_ascii=False, indent=2) + "\\n")
+PY
 
 current="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")"
 test "$(jq -r '.state' <<<"$current")" = "open"
