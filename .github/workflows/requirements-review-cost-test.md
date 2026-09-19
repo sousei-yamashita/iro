@@ -1,9 +1,6 @@
 ---
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
-    conclusion: success
+  workflow_dispatch:
 permissions:
   contents: read
   actions: read
