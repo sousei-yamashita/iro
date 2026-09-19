@@ -11,6 +11,11 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  issues: write
+
+concurrency:
+  group: jules-independent-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   independent-verification:
@@ -111,36 +116,40 @@ jobs:
         id: evidence
         shell: bash
         env:
-          SESSION_ID: ${{ steps.session.outputs.session_id }}
+          SESSION_NAME: ${{ steps.session.outputs.session_name }}
         run: |
           set -euo pipefail
+          test -n "$SESSION_NAME"
+          case "$SESSION_NAME" in sessions/*) ;; *) echo "Invalid Jules session resource name"; exit 1;; esac
+
           COMPLETED=0
           for _ in {1..180}; do
-            HTTP_CODE="$(curl --silent --show-error -o activities.json -w '%{http_code}' \
+            curl --fail-with-body --silent --show-error \
               -H "x-goog-api-key: $JULES_API_KEY" \
-              "https://jules.googleapis.com/v1alpha/sessions/$SESSION_ID/activities?pageSize=100")"
-            if [ "$HTTP_CODE" = "404" ]; then
-              echo "Activities not visible yet; retrying."
-              sleep 10
-              continue
-            fi
-            test "$HTTP_CODE" = "200"
-            jq -r '.activities[]? | [.createTime, .description, (.progressUpdated.title // ""), (.progressUpdated.description // ""), (.sessionFailed.reason // "")] | @tsv' activities.json | tail -n 10
-            if jq -e '.activities[]? | select(.sessionFailed != null)' activities.json >/dev/null; then
-              jq -r '.activities[]? | select(.sessionFailed != null) | .sessionFailed.reason' activities.json
-              exit 1
-            fi
-            if jq -e '.activities[]? | select(.sessionCompleted != null)' activities.json >/dev/null; then
-              COMPLETED=1
-              break
-            fi
-            if jq -e '.activities[]? | select(.planGenerated != null)' activities.json >/dev/null &&
-               ! jq -e '.activities[]? | select(.planApproved != null)' activities.json >/dev/null; then
-              echo "Plan exists but has not been auto-approved yet."
-            fi
+              "https://jules.googleapis.com/v1alpha/$SESSION_NAME" > session-status.json
+            STATE="$(jq -r '.state // empty' session-status.json)"
+            echo "Jules state: $STATE"
+            case "$STATE" in
+              COMPLETED) COMPLETED=1; break ;;
+              FAILED) echo "Jules session failed."; jq '{name,id,state,updateTime}' session-status.json; exit 1 ;;
+              AWAITING_PLAN_APPROVAL) echo "Unexpected plan approval wait."; exit 1 ;;
+              AWAITING_USER_FEEDBACK) echo "Jules requires user feedback."; exit 1 ;;
+              QUEUED|PLANNING|IN_PROGRESS|PAUSED|"") ;;
+              *) echo "Unexpected Jules state: $STATE"; exit 1 ;;
+            esac
             sleep 10
           done
           test "$COMPLETED" -eq 1
+
+          curl --fail-with-body --silent --show-error \
+            -H "x-goog-api-key: $JULES_API_KEY" \
+            "https://jules.googleapis.com/v1alpha/$SESSION_NAME/activities?pageSize=100" > activities.json
+
+          if jq -e '.activities[]? | select(.sessionFailed != null)' activities.json >/dev/null; then
+            jq -r '.activities[]? | select(.sessionFailed != null) | .sessionFailed.reason' activities.json
+            exit 1
+          fi
+          jq -e '.activities[]? | select(.sessionCompleted != null)' activities.json >/dev/null
 
           jq -r '[.activities[]? | select(.agentMessaged.agentMessage? != null) | .agentMessaged.agentMessage] | last // empty' activities.json > evidence.json
           jq -e . evidence.json >/dev/null
