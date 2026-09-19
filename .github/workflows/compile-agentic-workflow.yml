@@ -1,0 +1,43 @@
+name: Compile agentic workflow
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install gh-aw CLI
+        uses: github/gh-aw/actions/setup-cli@main
+        with:
+          version: v0.83.1
+
+      - name: Compile requirements review workflow
+        run: gh aw compile requirements-review-cost-test
+
+      - name: Verify compiled roles and bounded cost
+        shell: bash
+        run: |
+          set -euo pipefail
+          file=".github/workflows/requirements-review-cost-test.lock.yml"
+          test -f "$file"
+          grep -n 'GH_AW_REQUIRED_ROLES' "$file"
+          grep -n 'maxAiCredits' "$file"
+          if grep -q 'GH_AW_REQUIRED_ROLES: ""' "$file"; then
+            echo "Compiler emitted empty required roles"
+            exit 1
+          fi
+
+      - name: Upload compiled lock
+        uses: actions/upload-artifact@v4
+        with:
+          name: requirements-review-cost-test-lock
+          path: .github/workflows/requirements-review-cost-test.lock.yml
+          if-no-files-found: error
+          retention-days: 1
