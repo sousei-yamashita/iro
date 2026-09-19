@@ -6,8 +6,6 @@ permissions: read-all
 engine: copilot
 max-ai-credits: 10
 safe-outputs:
-  create-issue:
-    max: 0
   report-failure-as-issue: false
   report-failed-jobs: false
   threat-detection: false
