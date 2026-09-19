@@ -4,11 +4,15 @@ on:
     workflows: ["CI"]
     types: [completed]
     conclusion: success
+    branches:
+      - main
 permissions:
   contents: read
   actions: read
   pull-requests: read
-engine: copilot
+engine:
+  id: codex
+  model: copilot/gpt-5.3-codex
 features:
   group-concurrency-queue: false
 max-ai-credits: 10
