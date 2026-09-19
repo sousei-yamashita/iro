@@ -116,9 +116,15 @@ jobs:
           set -euo pipefail
           COMPLETED=0
           for _ in {1..180}; do
-            curl --fail-with-body --silent --show-error \
+            HTTP_CODE="$(curl --silent --show-error -o activities.json -w '%{http_code}' \
               -H "x-goog-api-key: $JULES_API_KEY" \
-              "https://jules.googleapis.com/v1alpha/sessions/$SESSION_ID/activities?pageSize=100" > activities.json
+              "https://jules.googleapis.com/v1alpha/sessions/$SESSION_ID/activities?pageSize=100")"
+            if [ "$HTTP_CODE" = "404" ]; then
+              echo "Activities not visible yet; retrying."
+              sleep 10
+              continue
+            fi
+            test "$HTTP_CODE" = "200"
             jq -r '.activities[]? | [.createTime, .description, (.progressUpdated.title // ""), (.progressUpdated.description // ""), (.sessionFailed.reason // "")] | @tsv' activities.json | tail -n 10
             if jq -e '.activities[]? | select(.sessionFailed != null)' activities.json >/dev/null; then
               jq -r '.activities[]? | select(.sessionFailed != null) | .sessionFailed.reason' activities.json
