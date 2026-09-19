@@ -4,5 +4,12 @@ on:
 jobs:
   probe:
     runs-on: ubuntu-latest
+    env:
+      GH_AW_MAX_DAILY_AI_CREDITS: ${{ vars.GH_AW_DEFAULT_MAX_DAILY_AI_CREDITS || '5000' }}
     steps:
-      - uses: github/gh-aw-actions/setup@045beb2d14bda8d0c1f2e83b41527f63770d2855
+      - id: setup
+        uses: github/gh-aw-actions/setup@045beb2d14bda8d0c1f2e83b41527f63770d2855
+        with:
+          destination: ${{ runner.temp }}/gh-aw/actions
+          job-name: ${{ github.job }}
+          safe-output-artifact-client: ${{ env.GH_AW_MAX_DAILY_AI_CREDITS != '' }}
