@@ -19,16 +19,32 @@ jobs:
       - name: Verify secret is present
         run: test -n "$JULES_API_KEY"
 
-      - name: List Jules sources and locate iro
+      - name: List all Jules sources and locate iro
         id: source
         shell: bash
         run: |
           set -euo pipefail
-          curl --fail-with-body --silent --show-error \
-            -H "x-goog-api-key: $JULES_API_KEY" \
-            "https://jules.googleapis.com/v1alpha/sources" > sources.json
-          SOURCE="$(jq -r '.sources[] | select(.githubRepo.owner == "sousei-yamashita" and .githubRepo.repo == "iro") | .name' sources.json | head -n1)"
-          test -n "$SOURCE"
+          : > all-sources.jsonl
+          TOKEN=""
+          for _ in {1..20}; do
+            URL="https://jules.googleapis.com/v1alpha/sources?pageSize=100"
+            if [ -n "$TOKEN" ]; then
+              URL="$URL&pageToken=$(printf '%s' "$TOKEN" | jq -sRr @uri)"
+            fi
+            curl --fail-with-body --silent --show-error \
+              -H "x-goog-api-key: $JULES_API_KEY" \
+              "$URL" > page.json
+            jq -c '.sources[]?' page.json >> all-sources.jsonl
+            TOKEN="$(jq -r '.nextPageToken // empty' page.json)"
+            [ -z "$TOKEN" ] && break
+          done
+          SOURCE="$(jq -sr '[.[] | select(.githubRepo.owner == "sousei-yamashita" and .githubRepo.repo == "iro")][0].name // empty' all-sources.jsonl)"
+          if [ -z "$SOURCE" ]; then
+            echo "::error::Jules API authentication succeeded, but sousei-yamashita/iro is not connected as a Jules Source."
+            echo "Connected repositories visible to this Jules account:"
+            jq -sr -r '.[] | "\(.githubRepo.owner)/\(.githubRepo.repo)"' all-sources.jsonl | sort
+            exit 2
+          fi
           echo "source=$SOURCE" >> "$GITHUB_OUTPUT"
           echo "Jules source located for sousei-yamashita/iro"
 
