@@ -18,7 +18,7 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Compile
         run: |
-          gh aw compile requirements-review-cost-test
+          gh aw compile requirements-review-cost-test --validate --verbose
           gh aw --version
       - name: Stage generated lock for diagnosis
         run: |
