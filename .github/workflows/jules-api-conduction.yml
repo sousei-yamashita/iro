@@ -1,0 +1,68 @@
+name: Jules API Conduction Test
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/jules-api-conduction.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  conduction:
+    name: Jules API conduction
+    runs-on: ubuntu-latest
+    env:
+      JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
+    steps:
+      - name: Verify secret is present
+        run: test -n "$JULES_API_KEY"
+
+      - name: List Jules sources and locate iro
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error \
+            -H "x-goog-api-key: $JULES_API_KEY" \
+            "https://jules.googleapis.com/v1alpha/sources" > sources.json
+          SOURCE="$(jq -r '.sources[] | select(.githubRepo.owner == "sousei-yamashita" and .githubRepo.repo == "iro") | .name' sources.json | head -n1)"
+          test -n "$SOURCE"
+          echo "source=$SOURCE" >> "$GITHUB_OUTPUT"
+          echo "Jules source located for sousei-yamashita/iro"
+
+      - name: Create non-mutating Jules session
+        id: session
+        shell: bash
+        env:
+          JULES_SOURCE: ${{ steps.source.outputs.source }}
+        run: |
+          set -euo pipefail
+          jq -n \
+            --arg source "$JULES_SOURCE" \
+            '{
+              prompt: "Sousei-line API conduction test only. Inspect the repository context and prepare a plan describing that the API connection works. Do not modify files, create commits, create pull requests, merge, deploy, approve, request changes, or make any adoption decision.",
+              title: "Sousei-line Jules API conduction test",
+              sourceContext: {
+                source: $source,
+                githubRepoContext: {startingBranch: "main"}
+              },
+              requirePlanApproval: true
+            }' > request.json
+
+          curl --fail-with-body --silent --show-error \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -H "x-goog-api-key: $JULES_API_KEY" \
+            --data @request.json \
+            "https://jules.googleapis.com/v1alpha/sessions" > session.json
+
+          SESSION_ID="$(jq -r '.id // empty' session.json)"
+          SESSION_NAME="$(jq -r '.name // empty' session.json)"
+          test -n "$SESSION_ID"
+          test -n "$SESSION_NAME"
+          echo "Jules API conduction succeeded"
+          echo "session_id=$SESSION_ID"
+          echo "session_name=$SESSION_NAME"
+          echo "requirePlanApproval=true; no automationMode; no PR creation requested"
