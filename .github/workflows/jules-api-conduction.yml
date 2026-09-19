@@ -97,7 +97,7 @@ jobs:
             --data @request.json \
             "https://jules.googleapis.com/v1alpha/sessions" > session.json
           SESSION_NAME="$(jq -r '.name // empty' session.json)"
-          SESSION_ID="$(jq -r '.id // empty' session.json)"
+          SESSION_ID="${SESSION_NAME#sessions/}"
           test -n "$SESSION_NAME"
           test -n "$SESSION_ID"
           echo "session_name=$SESSION_NAME" >> "$GITHUB_OUTPUT"
@@ -111,14 +111,14 @@ jobs:
         id: evidence
         shell: bash
         env:
-          SESSION_NAME: ${{ steps.session.outputs.session_name }}
+          SESSION_ID: ${{ steps.session.outputs.session_id }}
         run: |
           set -euo pipefail
           COMPLETED=0
           for _ in {1..180}; do
             curl --fail-with-body --silent --show-error \
               -H "x-goog-api-key: $JULES_API_KEY" \
-              "https://jules.googleapis.com/v1alpha/${SESSION_NAME}/activities?pageSize=100" > activities.json
+              "https://jules.googleapis.com/v1alpha/sessions/$SESSION_ID/activities?pageSize=100" > activities.json
             jq -r '.activities[]? | [.createTime, .description, (.progressUpdated.title // ""), (.progressUpdated.description // ""), (.sessionFailed.reason // "")] | @tsv' activities.json | tail -n 10
             if jq -e '.activities[]? | select(.sessionFailed != null)' activities.json >/dev/null; then
               jq -r '.activities[]? | select(.sessionFailed != null) | .sessionFailed.reason' activities.json
