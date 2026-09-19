@@ -1,0 +1,71 @@
+name: Production verification
+
+on:
+  workflow_run:
+    workflows: ["pages build and deployment"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: "Expected deployed revision (full SHA)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    env:
+      PRODUCTION_URL: https://sousei-yamashita.github.io/iro/
+      EXPECTED_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.expected_sha || github.event.workflow_run.head_sha }}
+    steps:
+      - name: Verify production response
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$EXPECTED_SHA"
+          response="$(mktemp)"
+          headers="$(mktemp)"
+          for attempt in {1..12}; do
+            if curl --fail --silent --show-error --location \
+              --connect-timeout 10 --max-time 30 \
+              --dump-header "$headers" --output "$response" \
+              "$PRODUCTION_URL"; then
+              break
+            fi
+            if [ "$attempt" -eq 12 ]; then
+              echo "Production URL did not become reachable."
+              exit 1
+            fi
+            sleep 10
+          done
+
+          grep -Fq '<title>色のやつ</title>' "$response"
+          grep -Fq 'id="base-colors"' "$response"
+          grep -Fq 'id="lighter"' "$response"
+          grep -Fq 'id="darker"' "$response"
+          grep -Fq 'id="tint-colors"' "$response"
+          grep -Fq 'id="undo"' "$response"
+          grep -Fq 'id="copy"' "$response"
+
+          status="$(awk 'toupper($1) ~ /^HTTP\// { code=$2 } END { print code }' "$headers")"
+          {
+            echo "PRODUCTION_VERIFICATION"
+            echo "url=$PRODUCTION_URL"
+            echo "expected_deployed_revision=$EXPECTED_SHA"
+            echo "http_status=$status"
+            echo "result=PASS"
+          } | tee production-verification.txt
+
+      - name: Upload verification evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-verification
+          path: production-verification.txt
+          if-no-files-found: error
