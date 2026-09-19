@@ -50,7 +50,7 @@ start, end = raw.find("{"), raw.rfind("}")
 if start < 0 or end < start:
     raise SystemExit("Requirements Review returned no JSON object")
 obj = json.loads(raw[start:end + 1])
-Path(".sousei-review/evidence.json").write_text(json.dumps(obj, ensure_ascii=False, indent=2) + "\\n")
+Path(".sousei-review/evidence.json").write_text(json.dumps(obj, ensure_ascii=False, indent=2) + "\n")
 PY
 
 current="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")"
