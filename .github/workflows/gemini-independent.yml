@@ -1,0 +1,64 @@
+name: Gemini Independent Verification Experiment
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/gemini-independent.yml"
+      - ".github/gemini-independent-trigger"
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  independent-verification:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Gemini independent verification
+        id: gemini
+        uses: google-github-actions/run-gemini-cli@v0
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          github_pr_number: ${{ github.event.pull_request.number }}
+          prompt: |
+            Independently inspect repository ${{ github.repository }}, PR #${{ github.event.pull_request.number }},
+            exact full head SHA ${{ github.event.pull_request.head.sha }}.
+            Do not rely on any prior Requirements Review verdict, semantic-review evidence,
+            human adoption decision, or prior independent verdict.
+            Inspect the complete PR change and applicable repository requirements including
+            README.md, AGENTS.md, PRODUCT.md, DESIGN.md, QA.md, docs/REVIEW_HANDOFF.md,
+            docs/REVIEW_EVIDENCE.md, and docs/SOUSEI_LINE_IDENTITY.md when present.
+            Verify the current PR head is exactly the SHA above; otherwise verdict STALE.
+            Do not modify files, commit, merge, deploy, approve, request changes, or make
+            the human ADOPT/REJECT decision.
+            Return exactly one JSON object, no Markdown:
+            {"schema":"sousei.line-evidence/v1","repository":"${{ github.repository }}","pr_number":${{ github.event.pull_request.number }},"subject_head_sha":"${{ github.event.pull_request.head.sha }}","stage":"independent","verdict":"PASS or NG or STALE","evidence":{"findings":[]},"inspector":{"process":"independent-requirements-verification","process_version":"1","executor":"gemini-cli-github-action"},"issued_at":"<RFC3339 UTC>"}
+
+      - name: Validate and return evidence
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GEMINI_RESPONSE: ${{ steps.gemini.outputs.summary }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          SUBJECT_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$GEMINI_RESPONSE" > evidence.json
+          jq -e . evidence.json >/dev/null
+          test "$(jq -r '.schema' evidence.json)" = "sousei.line-evidence/v1"
+          test "$(jq -r '.repository' evidence.json)" = "$GITHUB_REPOSITORY"
+          test "$(jq -r '.pr_number|tostring' evidence.json)" = "$PR_NUMBER"
+          test "$(jq -r '.subject_head_sha' evidence.json)" = "$SUBJECT_SHA"
+          test "$(jq -r '.stage' evidence.json)" = "independent"
+          jq -e '.verdict == "PASS" or .verdict == "NG" or .verdict == "STALE"' evidence.json >/dev/null
+          CURRENT_SHA="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq .head.sha)"
+          test "$CURRENT_SHA" = "$SUBJECT_SHA"
+          BODY="$(printf 'SOUSEI_GEMINI_INDEPENDENT_EVIDENCE\n\n\`\`\`json\n%s\n\`\`\`' "$GEMINI_RESPONSE")"
+          gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" -f body="$BODY" >/dev/null
