@@ -1,13 +1,8 @@
 ---
 on:
   workflow_dispatch:
-permissions:
-  contents: read
-  actions: read
-  pull-requests: read
+permissions: read-all
 engine: copilot
-features:
-  group-concurrency-queue: false
 max-ai-credits: 10
 safe-outputs:
   report-failure-as-issue: false
