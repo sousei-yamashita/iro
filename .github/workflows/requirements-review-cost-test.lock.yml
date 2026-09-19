@@ -79,7 +79,5 @@ jobs:
     permissions:
       actions: read
       contents: read
-    outputs:
-      engine_id: ${{ steps.generate_aw_info.outputs.engine_id }}
     steps:
       - run: echo ok
