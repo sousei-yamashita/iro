@@ -5,7 +5,7 @@ on:
     types: [completed]
     conclusion: success
     branches:
-      - "**"
+      - main
 permissions:
   contents: read
   actions: read
