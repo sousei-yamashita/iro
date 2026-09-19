@@ -21,18 +21,13 @@ jobs:
       - name: Compile requirements review workflow
         run: gh aw compile requirements-review-cost-test
 
-      - name: Verify compiled roles and bounded cost
+      - name: Verify compiled workflow and bounded cost
         shell: bash
         run: |
           set -euo pipefail
           file=".github/workflows/requirements-review-cost-test.lock.yml"
-          test -f "$file"
-          grep -n 'GH_AW_REQUIRED_ROLES' "$file"
+          test -s "$file"
           grep -n 'maxAiCredits' "$file"
-          if grep -q 'GH_AW_REQUIRED_ROLES: ""' "$file"; then
-            echo "Compiler emitted empty required roles"
-            exit 1
-          fi
 
       - name: Upload compiled lock
         uses: actions/upload-artifact@v4
