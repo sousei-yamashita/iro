@@ -18,8 +18,8 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Compile
         run: |
-          "$HOME/.local/bin/gh-aw" compile requirements-review-cost-test
-          "$HOME/.local/bin/gh-aw" --version
+          gh aw compile requirements-review-cost-test
+          gh aw --version
       - name: Stage generated lock for diagnosis
         run: |
           base64 -w0 .github/workflows/requirements-review-cost-test.lock.yml > compiled-review-lock-latest.txt
