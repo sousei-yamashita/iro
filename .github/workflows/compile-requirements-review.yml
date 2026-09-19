@@ -1,0 +1,28 @@
+name: Compile Requirements Review
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/requirements-review-cost-test.md'
+      - '.github/workflows/compile-requirements-review.yml'
+permissions:
+  contents: read
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install gh-aw
+        run: gh extension install github/gh-aw
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Compile
+        run: gh aw compile requirements-review-cost-test
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Emit compiled lock
+        run: |
+          echo 'LOCK_B64_BEGIN'
+          base64 -w0 .github/workflows/requirements-review-cost-test.lock.yml
+          echo
+          echo 'LOCK_B64_END'
