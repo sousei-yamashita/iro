@@ -9,6 +9,8 @@ permissions:
   actions: read
   pull-requests: read
 engine: copilot
+features:
+  group-concurrency-queue: false
 max-ai-credits: 10
 safe-outputs:
   report-failure-as-issue: false
