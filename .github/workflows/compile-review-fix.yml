@@ -1,0 +1,27 @@
+name: Compile Requirements Review Fix
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - run: gh extension install github/gh-aw
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - run: gh aw compile requirements-review-cost-test
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Stage compiled lock
+        run: |
+          base64 -w0 .github/workflows/requirements-review-cost-test.lock.yml > compiled-review-lock.txt
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add compiled-review-lock.txt
+          git commit -m "Stage compiled review lock"
+          git push origin HEAD:line/fix-review-concurrency
