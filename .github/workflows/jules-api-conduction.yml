@@ -20,6 +20,7 @@ jobs:
       JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
       SUBJECT_SHA: ${{ github.event.pull_request.head.sha }}
+      HEAD_REF: ${{ github.event.pull_request.head.ref }}
     steps:
       - name: Verify fixed subject
         shell: bash
@@ -87,8 +88,9 @@ jobs:
           jq -n \
             --arg prompt "$PROMPT" \
             --arg source "$JULES_SOURCE" \
+            --arg branch "$HEAD_REF" \
             --arg title "Sousei-line independent verification PR #$PR_NUMBER $SUBJECT_SHA" \
-            '{prompt:$prompt,title:$title,sourceContext:{source:$source,githubRepoContext:{startingBranch:"line/jules-api-conduction"}},requirePlanApproval:true}' > request.json
+            '{prompt:$prompt,title:$title,sourceContext:{source:$source,githubRepoContext:{startingBranch:$branch}},requirePlanApproval:false}' > request.json
           curl --fail-with-body --silent --show-error \
             -X POST -H "Content-Type: application/json" \
             -H "x-goog-api-key: $JULES_API_KEY" \
@@ -102,4 +104,4 @@ jobs:
           echo "session_id=$SESSION_ID" >> "$GITHUB_OUTPUT"
           echo "Independent verification session created: $SESSION_NAME"
           echo "Subject: $GITHUB_REPOSITORY PR #$PR_NUMBER $SUBJECT_SHA"
-          echo "Plan approval required; no mutation automation requested."
+          echo "Independent verification session started automatically; no mutation automation requested."
