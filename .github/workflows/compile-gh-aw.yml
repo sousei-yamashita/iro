@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - line/switch-requirements-review-to-codex-copilot
+      - test/codex-requirements-review-runtime
     paths:
       - ".github/workflows/*.md"
       - ".github/workflows/compile-gh-aw.yml"
