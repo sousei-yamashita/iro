@@ -6,12 +6,14 @@ on:
       - '.github/workflows/requirements-review-cost-test.md'
       - '.github/workflows/compile-requirements-review.yml'
 permissions:
-  contents: read
+  contents: write
 jobs:
   compile:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
       - name: Install gh-aw
         run: gh extension install github/gh-aw
         env:
@@ -20,9 +22,11 @@ jobs:
         run: gh aw compile requirements-review-cost-test
         env:
           GH_TOKEN: ${{ github.token }}
-      - name: Emit compiled lock
+      - name: Stage compiled lock for retrieval
         run: |
-          echo 'LOCK_B64_BEGIN'
-          base64 -w0 .github/workflows/requirements-review-cost-test.lock.yml
-          echo
-          echo 'LOCK_B64_END'
+          base64 -w0 .github/workflows/requirements-review-cost-test.lock.yml > compiled-review-lock.txt
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add compiled-review-lock.txt
+          git commit -m "Stage compiled review lock"
+          git push origin HEAD:line/install-requirements-review
