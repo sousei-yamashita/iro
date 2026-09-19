@@ -1,0 +1,30 @@
+name: Diagnostic compile latest gh-aw
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Install gh-aw v0.89.15
+        run: |
+          curl -sSL https://raw.githubusercontent.com/github/gh-aw/main/install-gh-aw.sh -o /tmp/install-gh-aw.sh
+          bash /tmp/install-gh-aw.sh v0.89.15
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Compile
+        run: |
+          "$HOME/.local/bin/gh-aw" compile requirements-review-cost-test
+          "$HOME/.local/bin/gh-aw" --version
+      - name: Stage generated lock for diagnosis
+        run: |
+          base64 -w0 .github/workflows/requirements-review-cost-test.lock.yml > compiled-review-lock-latest.txt
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add compiled-review-lock-latest.txt
+          git commit -m "Stage latest compiled lock diagnostic"
+          git push origin HEAD:diag/gh-aw-latest-validation
