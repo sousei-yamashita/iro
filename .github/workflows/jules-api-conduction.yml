@@ -114,21 +114,27 @@ jobs:
           SESSION_ID: ${{ steps.session.outputs.session_id }}
         run: |
           set -euo pipefail
+          COMPLETED=0
           for _ in {1..180}; do
-            curl --fail-with-body --silent --show-error               -H "x-goog-api-key: $JULES_API_KEY"               "https://jules.googleapis.com/v1alpha/sessions/$SESSION_ID" > session-status.json
-            STATE="$(jq -r '.state // empty' session-status.json)"
-            echo "Jules state: $STATE"
-            case "$STATE" in
-              COMPLETED) break ;;
-              FAILED) echo "Jules session failed"; exit 1 ;;
-              AWAITING_PLAN_APPROVAL|AWAITING_USER_FEEDBACK|PAUSED)
-                echo "Jules requires human interaction: $STATE"; exit 1 ;;
-            esac
+            curl --fail-with-body --silent --show-error \
+              -H "x-goog-api-key: $JULES_API_KEY" \
+              "https://jules.googleapis.com/v1alpha/sessions/$SESSION_ID/activities?pageSize=100" > activities.json
+            jq -r '.activities[]? | [.createTime, .description, (.progressUpdated.title // ""), (.progressUpdated.description // ""), (.sessionFailed.reason // "")] | @tsv' activities.json | tail -n 10
+            if jq -e '.activities[]? | select(.sessionFailed != null)' activities.json >/dev/null; then
+              jq -r '.activities[]? | select(.sessionFailed != null) | .sessionFailed.reason' activities.json
+              exit 1
+            fi
+            if jq -e '.activities[]? | select(.sessionCompleted != null)' activities.json >/dev/null; then
+              COMPLETED=1
+              break
+            fi
+            if jq -e '.activities[]? | select(.planGenerated != null)' activities.json >/dev/null &&
+               ! jq -e '.activities[]? | select(.planApproved != null)' activities.json >/dev/null; then
+              echo "Plan exists but has not been auto-approved yet."
+            fi
             sleep 10
           done
-          test "$(jq -r '.state' session-status.json)" = "COMPLETED"
-
-          curl --fail-with-body --silent --show-error             -H "x-goog-api-key: $JULES_API_KEY"             "https://jules.googleapis.com/v1alpha/sessions/$SESSION_ID/activities?pageSize=100" > activities.json
+          test "$COMPLETED" -eq 1
 
           jq -r '[.activities[]? | select(.agentMessaged.agentMessage? != null) | .agentMessaged.agentMessage] | last // empty' activities.json > evidence.json
           jq -e . evidence.json >/dev/null
