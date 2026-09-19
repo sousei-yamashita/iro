@@ -6,17 +6,19 @@ This document defines the production development line used by this repository. T
 
 ## Production line
 
+The intended production sequence is:
+
 `Implementation → Pull Request → CI → Requirements Review → Independent Verification → Human ADOPT/REJECT → Merge → Deploy → Production Verification`
 
 Every review and decision is bound to an exact full commit SHA. A pull request number alone is not sufficient identity.
 
 ## CI
 
-CI performs deterministic checks against the exact current PR head revision. CI success is necessary evidence for later review, but is not evidence that the requested product or behavior was implemented correctly.
+CI performs deterministic checks against the exact current PR head revision. CI success is necessary evidence for Requirements Review, but is not evidence that the requested product or behavior was implemented correctly.
 
 ## Requirements Review
 
-Requirements Review runs only after deterministic CI succeeds. It independently compares the exact PR revision with the PR request and applicable repository requirements, design, QA, and implementation material.
+Requirements Review runs only after deterministic CI succeeds. It compares the exact PR revision with the PR request and applicable repository requirements, design, QA, and implementation material.
 
 The current production executor is GitHub Actions using GitHub Copilot CLI. Its output is review evidence only. It MUST NOT make the human adoption decision, merge, deploy, or mutate the reviewed revision.
 
@@ -24,12 +26,15 @@ The current production executor is GitHub Actions using GitHub Copilot CLI. Its 
 
 Independent Verification is a separate review role executed through ChatGPT Work from a GitHub PR-update webhook.
 
+Before semantic inspection it MUST independently verify that the exact current PR head has completed successful deterministic CI and that Requirements Review for that exact head has completed successfully as an execution stage. This is an entrance gate only: the Requirements Review verdict/output MUST NOT be fetched or used as semantic evidence.
+
 For the target PR it MUST:
 
 - accept only an open, non-draft PR;
 - obtain and fix the current full head SHA as the inspection subject;
+- verify successful CI and completed Requirements Review execution for that exact SHA;
 - independently obtain the current diff and applicable source material;
-- not obtain, consult, quote, or inherit the Requirements Review verdict, prior semantic evidence, prior independent verdicts, or Human ADOPT/REJECT decisions as review grounds;
+- not obtain, consult, quote, or inherit the Requirements Review verdict/output, prior semantic evidence, prior independent verdicts, or Human ADOPT/REJECT decisions as review grounds;
 - re-read the PR immediately before reporting and require open + non-draft + exact full-head-SHA identity;
 - return `STALE` if that identity changes.
 
@@ -45,13 +50,17 @@ Human adoption is a distinct authority boundary after review evidence is availab
 
 If the subject revision changes after review, prior review/adoption evidence does not automatically transfer to the new revision.
 
+This contract does not claim that branch protection, merge, or deployment currently enforces the human decision mechanically. Such enforcement requires separate implementation and evidence.
+
 ## Merge and deploy
 
-Only an explicitly adopted revision may proceed to merge. Merge and deployment are not powers granted to Requirements Review or Independent Verification.
+Operationally, only an explicitly adopted revision should proceed to merge. Merge and deployment are not powers granted to Requirements Review or Independent Verification.
 
 ## Production Verification
 
-After a successful production deployment, Production Verification checks the deployed production endpoint and binds the verification to the expected deployed revision. A production-verification PASS means the deployed artifact passed the configured production checks; it does not retroactively alter earlier review evidence.
+After a successful GitHub Pages deployment event, Production Verification records the revision reported by that event and probes the production endpoint for the configured application markers.
+
+A production-verification PASS currently proves only that the production endpoint responded successfully with those expected markers while the workflow recorded the deployment-reported expected SHA. It does **not** prove that the bytes returned by the endpoint were built from that SHA. Strong deployed-revision-to-served-artifact identity is a separate hardening item and MUST NOT be inferred from the current PASS.
 
 ## Source material
 
