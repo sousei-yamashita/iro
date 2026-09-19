@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   compile:
@@ -28,6 +28,23 @@ jobs:
           file=".github/workflows/requirements-review-cost-test.lock.yml"
           test -s "$file"
           grep -n 'maxAiCredits' "$file"
+
+      - name: Commit compiled lock to dedicated branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          target_branch="generated/requirements-review-cost-test-lock"
+          file=".github/workflows/requirements-review-cost-test.lock.yml"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$target_branch"
+          git add "$file"
+          if git diff --cached --quiet; then
+            echo "Compiled lock is unchanged"
+            exit 0
+          fi
+          git commit -m "Compile requirements review workflow"
+          git push --force-with-lease origin "$target_branch"
 
       - name: Upload compiled lock
         uses: actions/upload-artifact@v4
