@@ -1,9 +1,21 @@
 ---
 on:
-  workflow_dispatch:
-permissions: read-all
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    conclusion: success
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
 engine: copilot
+features:
+  group-concurrency-queue: false
 max-ai-credits: 10
+safe-outputs:
+  report-failure-as-issue: false
+  report-failed-jobs: false
+  threat-detection: false
 ---
 
 # Requirements Review
