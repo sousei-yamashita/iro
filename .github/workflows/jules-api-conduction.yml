@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/jules-api-conduction.yml"
+      - ".github/jules-independent-trigger"
   workflow_dispatch:
 
 permissions:
