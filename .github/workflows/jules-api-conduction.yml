@@ -58,78 +58,34 @@ jobs:
           test -n "$SOURCE"
           echo "source=$SOURCE" >> "$GITHUB_OUTPUT"
 
-      - name: Use existing completed Jules session for Activities diagnostic
-        id: session
+      - name: Rehydrate existing Jules session with official SDK
         shell: bash
         run: |
           set -euo pipefail
-          # Diagnostic only: do not create a new Jules session.
-          SESSION_NAME="sessions/12079606609202268163"
-          SESSION_ID="12079606609202268163"
-          echo "session_name=$SESSION_NAME" >> "$GITHUB_OUTPUT"
-          echo "session_id=$SESSION_ID" >> "$GITHUB_OUTPUT"
-          echo "Using existing Jules session only: $SESSION_NAME"
+          mkdir -p /tmp/jules-sdk-diagnostic
+          cd /tmp/jules-sdk-diagnostic
+          npm init -y >/dev/null 2>&1
+          npm install --silent @google/jules-sdk
+          cat > diagnostic.mjs <<'EOF'
+          import { jules } from '@google/jules-sdk';
 
-      - name: Wait for Jules evidence and validate
-        id: evidence
-        shell: bash
-        env:
-          SESSION_NAME: ${{ steps.session.outputs.session_name }}
-          SESSION_ID: ${{ steps.session.outputs.session_id }}
-        run: |
-          set -euo pipefail
-          test -n "$SESSION_NAME"
-          test -n "$SESSION_ID"
-          case "$SESSION_NAME" in sessions/*) ;; *) echo "Invalid Jules session resource name"; exit 1;; esac
+          const session = jules.session('12079606609202268163');
+          const info = await session.info();
+          console.log('SDK session state:', info.state);
 
-          FOUND=0
-          for _ in {1..180}; do
-            curl --fail-with-body --silent --show-error \
-              -H "x-goog-api-key: $JULES_API_KEY" \
-              "https://jules.googleapis.com/v1alpha/$SESSION_NAME" > session-status.json
-            STATE="$(jq -r '.state // empty' session-status.json)"
-            echo "Jules state: $STATE"
-
-            curl --fail-with-body --silent --show-error \
-              -H "x-goog-api-key: $JULES_API_KEY" \
-              "https://jules.googleapis.com/v1alpha/sessions/$SESSION_ID/activities?pageSize=100" > activities.json
-
-            jq -r '[.activities[]? | select(.agentMessaged.agentMessage? != null) | .agentMessaged.agentMessage] | last // empty' activities.json > candidate.txt
-            if jq -e . candidate.txt >/dev/null 2>&1 &&
-               [ "$(jq -r '.schema // empty' candidate.txt)" = "sousei.line-evidence/v1" ]; then
-              cp candidate.txt evidence.json
-              FOUND=1
-              break
-            fi
-
-            if jq -e '.activities[]? | select(.sessionFailed != null)' activities.json >/dev/null; then
-              jq -r '.activities[]? | select(.sessionFailed != null) | .sessionFailed.reason' activities.json
-              exit 1
-            fi
-            case "$STATE" in
-              FAILED) echo "Jules session failed."; exit 1 ;;
-              AWAITING_PLAN_APPROVAL) echo "Unexpected plan approval wait."; exit 1 ;;
-              QUEUED|PLANNING|IN_PROGRESS|PAUSED|AWAITING_USER_FEEDBACK|COMPLETED|STATE_UNSPECIFIED|"") ;;
-              *) echo "Unexpected Jules state: $STATE"; exit 1 ;;
-            esac
-            if [ "$STATE" = "COMPLETED" ]; then
-              echo "Jules completed without a valid evidence message."
-              exit 1
-            fi
-            sleep 10
-          done
-          test "$FOUND" -eq 1
-
-          test "$(jq -r '.repository' evidence.json)" = "$GITHUB_REPOSITORY"
-          test "$(jq -r '.pr_number|tostring' evidence.json)" = "$PR_NUMBER"
-          test "$(jq -r '.subject_head_sha' evidence.json)" = "$SUBJECT_SHA"
-          test "$(jq -r '.stage' evidence.json)" = "independent"
-          jq -e '.verdict == "PASS" or .verdict == "NG" or .verdict == "STALE"' evidence.json >/dev/null
-          {
-            echo 'json<<EOF'
-            cat evidence.json
-            echo EOF
-          } >> "$GITHUB_OUTPUT"
+          let lastAgentMessage = '';
+          let count = 0;
+          for await (const activity of session.stream()) {
+            count += 1;
+            console.log('SDK activity:', activity.type);
+            if (activity.type === 'agentMessaged') lastAgentMessage = activity.message ?? '';
+          }
+          console.log('SDK activity count:', count);
+          console.log('SDK last agent message:', lastAgentMessage);
+          const result = await session.result();
+          console.log('SDK result state:', result.state);
+          EOF
+          node diagnostic.mjs
 
       - name: Recheck PR head before evidence return
         shell: bash
