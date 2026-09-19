@@ -13,6 +13,9 @@ features:
   group-concurrency-queue: false
 max-ai-credits: 10
 safe-outputs:
+  noop: false
+  missing-tool: false
+  missing-data: false
   report-failure-as-issue: false
   report-failed-jobs: false
   threat-detection: false
