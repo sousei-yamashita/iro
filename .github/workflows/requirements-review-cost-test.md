@@ -4,6 +4,8 @@ on:
     workflows: ["CI"]
     types: [completed]
     conclusion: success
+    branches:
+      - "**"
 permissions:
   contents: read
   actions: read
