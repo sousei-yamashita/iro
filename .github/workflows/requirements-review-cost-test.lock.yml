@@ -332,8 +332,3 @@ jobs:
                 GH_AW_MCP_CLI_SERVERS_LIST: process.env.GH_AW_MCP_CLI_SERVERS_LIST
               }
             });
-      - name: Validate prompt placeholders
-        env:
-          GH_AW_PROMPT: ${{ runner.temp }}/gh-aw/aw-prompts/prompt.txt
-        run: |
-          bash "${RUNNER_TEMP}/gh-aw/actions/validate_prompt_placeholders.sh"
