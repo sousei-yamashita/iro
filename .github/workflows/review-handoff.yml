@@ -1,0 +1,98 @@
+name: Review handoff
+
+on:
+  workflow_run:
+    workflows: ["CI evidence"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+jobs:
+  prepare:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve CI evidence artifact
+        id: evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifacts_json="$(curl --fail --silent --show-error -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$REPOSITORY/actions/runs/$RUN_ID/artifacts")"
+          artifact_name="$(printf '%s' "$artifacts_json" | python -c 'import json,sys; a=[x["name"] for x in json.load(sys.stdin).get("artifacts",[]) if x["name"].startswith("ci-evidence-pr-")]; print(a[0] if len(a)==1 else "")')"
+          test -n "$artifact_name"
+          echo "artifact_name=$artifact_name" >> "$GITHUB_OUTPUT"
+
+      - name: Download CI evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.evidence.outputs.artifact_name }}
+          path: evidence
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Validate current subject and prepare review request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, subprocess
+          with open("evidence/ci-evidence.json", encoding="utf-8") as f:
+              ci = json.load(f)
+          if ci.get("schema") != "sousei.line-evidence/v1":
+              raise SystemExit("unexpected evidence schema")
+          if ci.get("stage") != "ci" or ci.get("verdict") != "PASS":
+              raise SystemExit("CI evidence is not PASS")
+          repo = os.environ["REPOSITORY"]
+          pr_number = int(ci["pr_number"])
+          head_sha = ci["subject_head_sha"]
+          raw = subprocess.check_output(["curl","--fail","--silent","--show-error","-H",f"Authorization: Bearer {os.environ['GH_TOKEN']}","-H","Accept: application/vnd.github+json",f"https://api.github.com/repos/{repo}/pulls/{pr_number}"], text=True)
+          pr = json.loads(raw)
+          if pr["state"] != "open" or pr["head"]["sha"] != head_sha:
+              raise SystemExit("STALE: review subject is no longer the current open PR head")
+          request = {
+              "schema": "sousei.review-request/v1",
+              "repository": repo,
+              "pr_number": pr_number,
+              "subject_head_sha": head_sha,
+              "ci_evidence": ci,
+              "review_inputs": {
+                  "pr_body": pr.get("body") or "",
+                  "repository_ref": head_sha,
+                  "required_sources": [
+                      "PR request/body and exact diff",
+                      "applicable product requirements",
+                      "applicable design requirements",
+                      "applicable QA requirements",
+                      "applicable implementation instructions"
+                  ]
+              },
+              "constraints": {
+                  "must_recheck_current_head_before_verdict": True,
+                  "result_must_bind_same_subject_head_sha": True,
+                  "must_not_merge": True,
+                  "must_not_deploy": True,
+                  "must_not_make_human_adoption_decision": True
+              }
+          }
+          with open("review-request.json","w",encoding="utf-8") as f:
+              json.dump(request,f,ensure_ascii=False,indent=2); f.write("\n")
+          PY
+          cat review-request.json
+
+      - name: Upload review request
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-request
+          path: review-request.json
+          if-no-files-found: error
+          retention-days: 30
