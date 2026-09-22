@@ -1,26 +1,11 @@
 <!doctype html>
 <html lang="ja">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f7f5f1">
-  <title>色のやつ</title>
-  <link rel="stylesheet" href="styles.css">
-</head>
-<body>
-  <main>
-    <header><p class="eyebrow">IRO TOOL</p><h1>色のやつ</h1><p>ことばで選んで、ちょうどいい色へ。</p></header>
-    <section class="preview" aria-label="現在の色">
-      <div id="swatch" class="swatch"></div>
-      <div class="hex-row"><div><span>いまの色</span><strong id="hex">#000000</strong></div><button id="copy" class="copy">コピー</button></div>
-    </section>
-
-    <section><div class="section-title"><span>1</span><div><h2>はじめの色</h2><p>近い色をひとつ選ぶ</p></div></div><div id="base-colors" class="chips"></div></section>
-    <section><div class="section-title"><span>2</span><div><h2>明るさ</h2><p>押すたび、少しずつ変わる</p></div></div><div class="lightness"><button id="darker"><b>−</b> 暗く</button><button id="lighter"><b>＋</b> 明るく</button></div></section>
-    <section><div class="section-title"><span>3</span><div><h2>色味を寄せる</h2><p>混ぜたい色を選ぶ</p></div></div><div id="tint-colors" class="tints"></div></section>
-    <button id="undo" class="undo" disabled>↶ ひとつ前に戻す</button>
-    <p id="status" class="status" role="status" aria-live="polite"></p>
-  </main>
-  <script type="module" src="src/app.js"></script>
-</body>
-</html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#f7f5f1"><title>色のやつ</title><link rel="stylesheet" href="styles.css"></head>
+<body><main>
+<header><p class="eyebrow">IRO TOOL</p><h1>色のやつ</h1></header>
+<section class="preview" aria-label="現在の色"><div id="swatch" class="swatch"></div><div class="result-row"><div class="hex-value"><span>いまの色</span><strong id="hex">#000000</strong></div><div class="result-actions"><button id="undo" class="undo" disabled>↶ 戻す</button><button id="copy" class="copy">コピー</button></div></div></section>
+<section class="step"><div class="section-title"><span>1</span><h2>はじめの色</h2></div><div id="base-colors" class="chips"></div></section>
+<section class="step"><div class="section-title"><span>2</span><h2>明るさ</h2></div><div class="lightness"><button id="darker"><b>−</b> 暗く</button><button id="lighter"><b>＋</b> 明るく</button></div></section>
+<section class="step tint-step"><div class="section-title"><span>3</span><h2>色味を寄せる</h2><small>横に選べます →</small></div><div class="tint-window"><div id="tint-colors" class="tints"></div></div></section>
+<p id="status" class="status" role="status" aria-live="polite"></p>
+</main><script type="module" src="src/app.js"></script></body></html>
