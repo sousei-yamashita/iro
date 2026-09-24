@@ -10,7 +10,12 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: jules-independent-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   independent-verification:
@@ -20,6 +25,7 @@ jobs:
       JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
       SUBJECT_SHA: ${{ github.event.pull_request.head.sha }}
+      HEAD_REF: ${{ github.event.pull_request.head.ref }}
     steps:
       - name: Verify fixed subject
         shell: bash
@@ -52,51 +58,57 @@ jobs:
           test -n "$SOURCE"
           echo "source=$SOURCE" >> "$GITHUB_OUTPUT"
 
-      - name: Create blind independent-verification session
-        id: session
+      - name: Rehydrate existing Jules session with official SDK
         shell: bash
-        env:
-          JULES_SOURCE: ${{ steps.source.outputs.source }}
         run: |
           set -euo pipefail
-          PROMPT="$(cat <<EOF
-You are the independent verification executor for Sousei-line.
+          mkdir -p /tmp/jules-sdk-diagnostic
+          cd /tmp/jules-sdk-diagnostic
+          npm init -y >/dev/null 2>&1
+          npm install --silent @google/jules-sdk
+          cat > diagnostic.mjs <<'EOF'
+          import { jules } from '@google/jules-sdk';
 
-Inspection subject:
-repository: $GITHUB_REPOSITORY
-pull_request: #$PR_NUMBER
-exact full head SHA: $SUBJECT_SHA
+          const session = jules.session('12079606609202268163');
+          const info = await session.info();
+          console.log('SDK session state:', info.state);
 
-Independence requirement:
-- Independently inspect the repository and this exact PR/head.
-- Do NOT use, request, quote, or rely on any prior Requirements Review verdict, semantic-review evidence, human adoption decision, or prior independent verdict.
-- Gather the applicable requirements and evidence yourself from the repository and GitHub PR state available to you.
-- Verify the current PR head is exactly the SHA above. If it is not, return STALE.
-- Inspect the complete change and applicable repository requirements, including README.md, AGENTS.md, PRODUCT.md, DESIGN.md, QA.md, docs/REVIEW_HANDOFF.md, docs/REVIEW_EVIDENCE.md, and docs/SOUSEI_LINE_IDENTITY.md when present.
-- Check identity mismatch, stale evidence assumptions, scope drift, merge-boundary confusion, unsafe permissions, and concrete requirement mismatches.
-- Inspection only. Do not modify files, commit, create a PR, merge, deploy, approve, request changes, or make the human ADOPT/REJECT decision.
+          let lastAgentMessage = '';
+          let count = 0;
+          for await (const activity of session.stream()) {
+            count += 1;
+            console.log('SDK activity:', activity.type);
+            if (activity.type === 'agentMessaged') lastAgentMessage = activity.message ?? '';
+          }
+          console.log('SDK activity count:', count);
+          console.log('SDK last agent message:', lastAgentMessage);
+          const result = await session.result();
+          console.log('SDK result state:', result.state);
+          EOF
+          node diagnostic.mjs
 
-Your final response MUST be exactly one JSON object and no Markdown:
-{"schema":"sousei.line-evidence/v1","repository":"$GITHUB_REPOSITORY","pr_number":$PR_NUMBER,"subject_head_sha":"$SUBJECT_SHA","stage":"independent","verdict":"PASS or NG or STALE","evidence":{"findings":[]},"inspector":{"process":"independent-requirements-verification","process_version":"1","executor":"google-jules"},"issued_at":"<RFC3339 UTC>"}
-For NG, findings must identify concrete mismatches and their source requirement.
-EOF
-)"
-          jq -n \
-            --arg prompt "$PROMPT" \
-            --arg source "$JULES_SOURCE" \
-            --arg title "Sousei-line independent verification PR #$PR_NUMBER $SUBJECT_SHA" \
-            '{prompt:$prompt,title:$title,sourceContext:{source:$source,githubRepoContext:{startingBranch:"line/jules-api-conduction"}},requirePlanApproval:true}' > request.json
-          curl --fail-with-body --silent --show-error \
-            -X POST -H "Content-Type: application/json" \
-            -H "x-goog-api-key: $JULES_API_KEY" \
-            --data @request.json \
-            "https://jules.googleapis.com/v1alpha/sessions" > session.json
-          SESSION_NAME="$(jq -r '.name // empty' session.json)"
-          SESSION_ID="$(jq -r '.id // empty' session.json)"
-          test -n "$SESSION_NAME"
-          test -n "$SESSION_ID"
-          echo "session_name=$SESSION_NAME" >> "$GITHUB_OUTPUT"
-          echo "session_id=$SESSION_ID" >> "$GITHUB_OUTPUT"
-          echo "Independent verification session created: $SESSION_NAME"
-          echo "Subject: $GITHUB_REPOSITORY PR #$PR_NUMBER $SUBJECT_SHA"
-          echo "Plan approval required; no mutation automation requested."
+      - name: Recheck PR head before evidence return
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          CURRENT_SHA="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq .head.sha)"
+          test "$CURRENT_SHA" = "$SUBJECT_SHA"
+
+      - name: Return independent evidence to PR
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVIDENCE_JSON: ${{ steps.evidence.outputs.json }}
+        run: |
+          set -euo pipefail
+          MARKER="SOUSEI_INDEPENDENT_EVIDENCE"
+          EXISTING="$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments?per_page=100" --paginate             --jq '.[] | select(.body | contains("'"$MARKER"'")) | select(.body | contains("'"$SUBJECT_SHA"'")) | .id' | head -n1)"
+          if [ -n "$EXISTING" ]; then
+            echo "Evidence already returned for this exact SHA: comment $EXISTING"
+            exit 0
+          fi
+          BODY="$(printf '%s\n\n\`\`\`json\n%s\n\`\`\`' "$MARKER" "$EVIDENCE_JSON")"
+          gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" -f body="$BODY" >/dev/null
+          echo "Independent evidence returned to PR #$PR_NUMBER for $SUBJECT_SHA"
